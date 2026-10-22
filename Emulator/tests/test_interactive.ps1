@@ -1,0 +1,1 @@
+python Emulator/src/main.py --vfs filesystem.zip
