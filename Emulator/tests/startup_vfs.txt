@@ -1,0 +1,7 @@
+ls
+ls /
+cd
+cd /documents/course/week1
+ls /documents/course/week1
+
+exit
