@@ -1,0 +1,5 @@
+key,value
+package,junit:junit
+version,4.13.2
+repository,not-a-url
+test_mode,false
