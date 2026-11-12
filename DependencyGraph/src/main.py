@@ -213,11 +213,44 @@ def loading_order(graph):
     return order
 
 
+def to_plantuml(graph):
+    lines = ["@startuml"]
+    names = {}
+
+    for number, package in enumerate(graph):
+        name = f"P{number}"
+        names[package] = name
+        lines.append(f'component "{package}" as {name}')
+
+    for package, dependencies in graph.items():
+        for dependency in dependencies:
+            lines.append(f"{names[package]} --> {names[dependency]}")
+
+    lines.append("@enduml")
+
+    return "\n".join(lines)
+
+
+def print_result(graph, args):
+    if args.plantuml:
+        print(to_plantuml(graph))
+
+    elif args.order:
+        order = loading_order(graph)
+        print("Loading order:")
+        print(" -> ".join(order))
+
+    else:
+        print_graph(graph)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Maven dependency graph")
     default_path = Path(__file__).resolve().parents[1] / "config.csv"
     parser.add_argument("--config", type=Path, default=default_path)
-    parser.add_argument("--order", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--order", action="store_true")
+    mode.add_argument("--plantuml", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -230,18 +263,11 @@ def main():
 
     try:
         graph = build_graph(config, args.config)
-        if args.order:
-            order = loading_order(graph)
+        print_result(graph, args)
 
     except (OSError, ET.ParseError, ValueError) as error:
         print(f"Dependency loading error: {error}")
         return 1
-
-    if args.order:
-        print("Loading order:")
-        print(" -> ".join(order))
-    else:
-        print_graph(graph)
 
     return 0
 

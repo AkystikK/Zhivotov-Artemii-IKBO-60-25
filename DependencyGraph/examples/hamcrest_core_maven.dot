@@ -1,0 +1,3 @@
+digraph "coursework:dependency-comparison:jar:1.0" { 
+	"coursework:dependency-comparison:jar:1.0" -> "org.hamcrest:hamcrest-core:jar:1.3:compile" ; 
+ } 

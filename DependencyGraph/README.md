@@ -1,8 +1,8 @@
 # Maven dependency graph: variant 11
 
-Practical work 2, stages 1-4. The application reads settings from CSV,
-builds a graph using recursive BFS, and calculates dependency-first loading
-order. Stage 5 is not implemented yet.
+Practical work 2, stages 1-5. The application reads settings from CSV,
+builds a graph using recursive BFS, calculates dependency-first loading
+order, and prints a PlantUML diagram description.
 
 ## Requirements
 
@@ -109,7 +109,7 @@ the assignment does not specify the format of the local graph file.
 
 For a cycle `A -> B -> C -> A`, all three edges are printed and traversal
 finishes. The optional loading-order mode reports that cycles prevent an
-order. PlantUML belongs to stage 5.
+order. PlantUML mode preserves and displays cyclic connections.
 
 ## Stage 4
 
@@ -132,6 +132,37 @@ about JVM class loading, Maven download scheduling, or classpath precedence.
 See [the Maven comparison](tests/MAVEN_COMPARISON.md) for measured output
 and the explanation of differences.
 
+## Stage 5
+
+Use `--plantuml` to print the graph as PlantUML text. Output starts with
+`@startuml` and ends with `@enduml`; there is no extra graph heading. Each
+package has a quoted component label and a short alias such as `P0`.
+Dependencies become arrows between aliases. Explicit component declarations
+preserve packages with no dependencies. Shared nodes are declared once.
+
+Example for `A -> B`:
+
+```plantuml
+@startuml
+component "A" as P0
+component "B" as P1
+P0 --> P1
+@enduml
+```
+
+`--plantuml` and `--order` are separate output modes and cannot be used
+together. Neither requires a new CSV setting. Without either option, the
+program continues to print the text graph.
+
+[Three rendered examples and Maven comparisons](examples/README.md) include
+JUnit 4.13.2, Hamcrest Library 1.3, and Hamcrest Core 1.3. Each example has
+its CSV settings, generated `.puml`, and rendered `.svg`, plus native Maven
+DOT and its SVG rendering. SVGs are the required demonstration results;
+renderer binaries, downloaded JARs, caches, and PNG checks are not committed.
+
+The application itself only prints PlantUML and uses the Python standard
+library. PlantUML/Java are needed only to turn its text into an image.
+
 ## Run
 
 From the repository root:
@@ -141,6 +172,7 @@ python -B DependencyGraph/src/main.py
 .\DependencyGraph\run.bat
 python -B DependencyGraph/src/main.py --config DependencyGraph/tests/config_test.csv
 python -B DependencyGraph/src/main.py --config DependencyGraph/tests/config_shared.csv --order
+python -B DependencyGraph/src/main.py --plantuml
 ```
 
 By default the program reads `DependencyGraph/config.csv`. The optional
@@ -164,6 +196,8 @@ loading-order error. Without `--order`, the graph output is unchanged.
 | `build_graph(config, config_path)` | Select the source and collect the reachable graph. |
 | `print_graph(graph)` | Print package-to-dependency connections. |
 | `loading_order(graph)` | Put dependencies before dependents, or report a cycle. |
+| `to_plantuml(graph)` | Convert graph nodes and edges to PlantUML text. |
+| `print_result(graph, args)` | Select graph, loading-order, or PlantUML output. |
 | `main()` | Read, validate, print, and handle errors. |
 
 ## Demonstration and tests
@@ -173,6 +207,7 @@ loading-order error. Without `--order`, the graph output is unchanged.
 .\DependencyGraph\tests\test_stage2.ps1
 .\DependencyGraph\tests\test_stage3.ps1
 .\DependencyGraph\tests\test_stage4.ps1
+.\DependencyGraph\tests\test_stage5.ps1
 python -B -m unittest discover -s DependencyGraph/tests -p 'test_*.py' -v
 ```
 
@@ -193,3 +228,10 @@ Stage 4 tests cover the single package, chain, shared dependency, cycle,
 self-cycle, and a cycle mixed with an independent package. The demonstration
 script expects the cyclic case to fail. Maven is used only by the separate
 comparison script; the Python program never invokes a package manager.
+
+Stage 5 tests cover isolated/shared nodes, cycles, Maven names, clean CLI
+PlantUML output, and incompatible output options. `test_stage5.ps1` prints
+PlantUML for all three real-package examples and needs network access.
+
+Ready `.puml` and `.svg` examples are in `examples`. Trial rendering and
+comparison caches should be kept outside the repository.

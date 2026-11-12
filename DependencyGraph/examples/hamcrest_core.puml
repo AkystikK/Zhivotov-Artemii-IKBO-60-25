@@ -1,0 +1,3 @@
+@startuml
+component "org.hamcrest:hamcrest-core:1.3" as P0
+@enduml
