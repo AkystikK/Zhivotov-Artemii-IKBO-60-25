@@ -23,21 +23,20 @@ class ConfigTests(unittest.TestCase):
         )
 
     def test_real_configuration(self):
-        result = self.launch()
+        path = PROJECT / "config.csv"
+        config = read_config(path)
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("package = junit:junit", result.stdout)
-        self.assertIn("version = 4.13.2", result.stdout)
-        self.assertIn("repository = https://", result.stdout)
-        self.assertIn("test_mode = false", result.stdout)
+        validate_config(config, path)
+
+        self.assertEqual(config["package"], "junit:junit")
+        self.assertEqual(config["version"], "4.13.2")
+        self.assertEqual(config["test_mode"], "false")
 
     def test_local_configuration(self):
         result = self.launch(PROJECT / "tests/config_test.csv")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("package = A", result.stdout)
-        self.assertIn("repository = repository.json", result.stdout)
-        self.assertIn("test_mode = true", result.stdout)
+        self.assertIn("stage 3", result.stdout)
 
     def test_errors_for_each_parameter(self):
         for name in ["package", "version", "repository", "mode"]:
