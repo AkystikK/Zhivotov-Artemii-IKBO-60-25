@@ -1,8 +1,8 @@
 # Maven dependency graph: variant 11
 
-Practical work 2, stages 1-3. The application reads settings from CSV and
-builds a transitive dependency graph using recursive breadth-first search.
-Stages 4-5 are not implemented yet.
+Practical work 2, stages 1-4. The application reads settings from CSV,
+builds a graph using recursive BFS, and calculates dependency-first loading
+order. Stage 5 is not implemented yet.
 
 ## Requirements
 
@@ -108,7 +108,29 @@ as required by the assignment. The JSON layout is our representation;
 the assignment does not specify the format of the local graph file.
 
 For a cycle `A -> B -> C -> A`, all three edges are printed and traversal
-finishes. Loading order and PlantUML belong to later stages.
+finishes. The optional loading-order mode reports that cycles prevent an
+order. PlantUML belongs to stage 5.
+
+## Stage 4
+
+Use `--order` to print loading order instead of the graph. A package is
+placed after all of its dependencies; the selected root package is included
+at the end. Independent packages can have several equally valid orders.
+This program uses the graph's existing order to break ties.
+
+`loading_order` repeatedly selects packages whose dependencies are already
+in the result. If unprocessed packages remain but none can be selected,
+there is a cycle and the program reports an error without printing a partial
+order. The input graph is not modified.
+
+Examples: chain `A -> B -> C` gives `C -> B -> A`; the shared-dependency
+example gives `D -> B -> C -> A`. A cycle has no dependency-first order.
+
+The assignment does not define a physical network download sequence. The
+implemented order means dependencies before dependents; it is not a claim
+about JVM class loading, Maven download scheduling, or classpath precedence.
+See [the Maven comparison](tests/MAVEN_COMPARISON.md) for measured output
+and the explanation of differences.
 
 ## Run
 
@@ -118,6 +140,7 @@ From the repository root:
 python -B DependencyGraph/src/main.py
 .\DependencyGraph\run.bat
 python -B DependencyGraph/src/main.py --config DependencyGraph/tests/config_test.csv
+python -B DependencyGraph/src/main.py --config DependencyGraph/tests/config_shared.csv --order
 ```
 
 By default the program reads `DependencyGraph/config.csv`. The optional
@@ -125,7 +148,8 @@ By default the program reads `DependencyGraph/config.csv`. The optional
 that file.
 
 Configuration errors are reported as `Configuration error: ...`. Exit code
-0 means success; exit code 1 means a configuration or dependency-load error.
+0 means success; exit code 1 means a configuration, dependency-load, or
+loading-order error. Without `--order`, the graph output is unchanged.
 
 ## Functions
 
@@ -139,6 +163,7 @@ Configuration errors are reported as `Configuration error: ...`. Exit code
 | `bfs(level, graph, visited, config, repository)` | Recursively process BFS levels. |
 | `build_graph(config, config_path)` | Select the source and collect the reachable graph. |
 | `print_graph(graph)` | Print package-to-dependency connections. |
+| `loading_order(graph)` | Put dependencies before dependents, or report a cycle. |
 | `main()` | Read, validate, print, and handle errors. |
 
 ## Demonstration and tests
@@ -147,6 +172,7 @@ Configuration errors are reported as `Configuration error: ...`. Exit code
 .\DependencyGraph\tests\test_stage1.ps1
 .\DependencyGraph\tests\test_stage2.ps1
 .\DependencyGraph\tests\test_stage3.ps1
+.\DependencyGraph\tests\test_stage4.ps1
 python -B -m unittest discover -s DependencyGraph/tests -p 'test_*.py' -v
 ```
 
@@ -162,3 +188,8 @@ package, a chain, a shared dependency, and a cycle. It needs no network.
 python -B DependencyGraph/src/main.py --config DependencyGraph/tests/config_shared.csv
 python -B DependencyGraph/src/main.py --config DependencyGraph/tests/config_cycle.csv
 ```
+
+Stage 4 tests cover the single package, chain, shared dependency, cycle,
+self-cycle, and a cycle mixed with an independent package. The demonstration
+script expects the cyclic case to fail. Maven is used only by the separate
+comparison script; the Python program never invokes a package manager.

@@ -191,10 +191,33 @@ def print_graph(graph):
         print(f"{package} -> {text}")
 
 
+def loading_order(graph):
+    order = []
+    remaining = list(graph)
+
+    while remaining:
+        ready = []
+
+        for package in remaining:
+            if all(dependency in order for dependency in graph[package]):
+                ready.append(package)
+
+        if not ready:
+            raise ValueError("A cycle prevents dependency loading order")
+
+        order.extend(ready)
+
+        for package in ready:
+            remaining.remove(package)
+
+    return order
+
+
 def main():
     parser = argparse.ArgumentParser(description="Maven dependency graph")
     default_path = Path(__file__).resolve().parents[1] / "config.csv"
     parser.add_argument("--config", type=Path, default=default_path)
+    parser.add_argument("--order", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -207,12 +230,18 @@ def main():
 
     try:
         graph = build_graph(config, args.config)
+        if args.order:
+            order = loading_order(graph)
 
     except (OSError, ET.ParseError, ValueError) as error:
         print(f"Dependency loading error: {error}")
         return 1
 
-    print_graph(graph)
+    if args.order:
+        print("Loading order:")
+        print(" -> ".join(order))
+    else:
+        print_graph(graph)
 
     return 0
 
