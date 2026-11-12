@@ -15,14 +15,19 @@ from main import get_dependencies, main
 
 
 POM = b"""<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <properties>
+        <library.version>1.0</library.version>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>example</groupId>
             <artifactId>first</artifactId>
+            <version>${library.version}</version>
         </dependency>
         <dependency>
             <groupId>example</groupId>
             <artifactId>second</artifactId>
+            <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -42,7 +47,7 @@ class DependencyTests(unittest.TestCase):
         with patch("main.urlopen", return_value=io.BytesIO(POM)) as request:
             result = get_dependencies("org.example:demo", "2.5", "https://r/")
 
-        self.assertEqual(result, ["example:first", "example:second"])
+        self.assertEqual(result, ["example:first:1.0", "example:second:2.5"])
         request.assert_called_once_with(
             "https://r/org/example/demo/2.5/demo-2.5.pom", timeout=10
         )
@@ -53,7 +58,7 @@ class DependencyTests(unittest.TestCase):
         with patch("main.urlopen", return_value=io.BytesIO(pom)):
             result = get_dependencies("example:demo", "1", "https://r")
 
-        self.assertEqual(result, ["example:first", "example:second"])
+        self.assertEqual(result, ["example:first:1.0", "example:second:1"])
 
     def test_no_dependencies(self):
         with patch("main.urlopen", return_value=io.BytesIO(b"<project/>")):
@@ -86,12 +91,13 @@ class DependencyTests(unittest.TestCase):
         output = io.StringIO()
 
         with patch.object(sys, "argv", ["main.py"]):
-            with patch("main.urlopen", return_value=io.BytesIO(POM)):
+            with patch("main.get_dependencies", side_effect=[
+                    ["example:first:1", "example:second:1"], [], []]):
                 with contextlib.redirect_stdout(output):
                     result = main()
 
         self.assertEqual(result, 0)
-        self.assertIn("junit:junit:4.13.2", output.getvalue())
+        self.assertIn("junit:junit:4.13.2 ->", output.getvalue())
         self.assertIn("example:first", output.getvalue())
         self.assertIn("example:second", output.getvalue())
 

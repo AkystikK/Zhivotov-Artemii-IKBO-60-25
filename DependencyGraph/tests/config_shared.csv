@@ -1,0 +1,5 @@
+key,value
+package,A
+version,1.0
+repository,repository_shared.json
+test_mode,true

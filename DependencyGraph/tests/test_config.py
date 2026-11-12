@@ -36,7 +36,8 @@ class ConfigTests(unittest.TestCase):
         result = self.launch(PROJECT / "tests/config_test.csv")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("stage 3", result.stdout)
+        self.assertIn("Dependency graph:", result.stdout)
+        self.assertIn("A -> B, C", result.stdout)
 
     def test_errors_for_each_parameter(self):
         for name in ["package", "version", "repository", "mode"]:

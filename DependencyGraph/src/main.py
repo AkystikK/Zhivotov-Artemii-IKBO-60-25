@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import urlopen
@@ -59,6 +60,16 @@ def validate_config(config, config_path):
             raise ValueError("Repository must be a URL")
 
 
+def resolve_value(value, properties):
+    for key in properties:
+        value = value.replace("${" + key + "}", properties[key])
+
+    if "${" in value:
+        raise ValueError(f"Cannot resolve POM property: {value}")
+
+    return value
+
+
 def get_dependencies(package, version, repository):
     group_id, artifact_id = package.split(":")
     group_path = group_id.replace(".", "/")
@@ -72,18 +83,112 @@ def get_dependencies(package, version, repository):
     if root.tag.split("}")[-1] != "project":
         raise ValueError("The repository did not return a Maven POM")
 
+    properties = {
+        "project.version": version, "pom.version": version,
+        "project.groupId": group_id, "project.artifactId": artifact_id,
+    }
+
+    for item in root.findall("./{*}properties/*"):
+        properties[item.tag.split("}")[-1]] = (item.text or "").strip()
+
     dependencies = []
 
     for dependency in root.findall("./{*}dependencies/{*}dependency"):
         group = dependency.findtext("{*}groupId", "").strip()
         artifact = dependency.findtext("{*}artifactId", "").strip()
+        dependency_version = dependency.findtext("{*}version", "").strip()
 
-        if not group or not artifact:
-            raise ValueError("A dependency has no groupId or artifactId")
+        if not group or not artifact or not dependency_version:
+            raise ValueError("A dependency has no name or version")
 
-        dependencies.append(f"{group}:{artifact}")
+        name = resolve_value(f"{group}:{artifact}", properties)
+        dependency_version = resolve_value(dependency_version, properties)
+        dependencies.append(f"{name}:{dependency_version}")
 
     return dependencies
+
+
+def read_test_repository(path):
+    with path.open(encoding="utf-8-sig") as file:
+        repository = json.load(file)
+
+    if not isinstance(repository, dict):
+        raise ValueError("Test repository must be a JSON object")
+
+    for package, dependencies in repository.items():
+        if not package.isascii() or not package.isalpha():
+            raise ValueError("Test package names must be uppercase letters")
+
+        if not package.isupper():
+            raise ValueError("Test package names must be uppercase letters")
+
+        if not isinstance(dependencies, list):
+            raise ValueError(f"Dependencies of {package} must be a list")
+
+        for dependency in dependencies:
+            if not isinstance(dependency, str) or dependency not in repository:
+                raise ValueError(f"Unknown test dependency of {package}")
+
+    return repository
+
+
+def bfs(level, graph, visited, config, repository):
+    next_level = []
+
+    for package in level:
+        if config["test_mode"] == "true":
+            if package not in repository:
+                raise ValueError(f"Test package not found: {package}")
+
+            dependencies = repository[package]
+
+        else:
+            name, version = package.rsplit(":", 1)
+            dependencies = get_dependencies(name, version, repository)
+
+        graph[package] = dependencies
+
+        for dependency in dependencies:
+            if dependency not in visited:
+                visited.add(dependency)
+                next_level.append(dependency)
+
+    if next_level:
+        bfs(next_level, graph, visited, config, repository)
+
+
+def build_graph(config, config_path):
+    if config["test_mode"] == "true":
+        path = Path(config["repository"])
+
+        if not path.is_absolute():
+            path = config_path.parent / path
+
+        repository = read_test_repository(path)
+        start = config["package"]
+
+    else:
+        repository = config["repository"]
+        start = config["package"] + ":" + config["version"]
+
+    graph = {}
+    visited = {start}
+
+    bfs([start], graph, visited, config, repository)
+
+    return graph
+
+
+def print_graph(graph):
+    print("Dependency graph:")
+
+    for package, dependencies in graph.items():
+        if dependencies:
+            text = ", ".join(dependencies)
+        else:
+            text = "(none)"
+
+        print(f"{package} -> {text}")
 
 
 def main():
@@ -100,26 +205,14 @@ def main():
         print(f"Configuration error: {error}")
         return 1
 
-    if config["test_mode"] == "true":
-        print("Test repository analysis belongs to stage 3.")
-        return 0
-
     try:
-        dependencies = get_dependencies(
-            config["package"], config["version"], config["repository"]
-        )
+        graph = build_graph(config, args.config)
 
     except (OSError, ET.ParseError, ValueError) as error:
         print(f"Dependency loading error: {error}")
         return 1
 
-    print(f"Direct dependencies for {config['package']}:{config['version']}:")
-
-    if not dependencies:
-        print("No direct dependencies.")
-
-    for dependency in dependencies:
-        print(dependency)
+    print_graph(graph)
 
     return 0
 
