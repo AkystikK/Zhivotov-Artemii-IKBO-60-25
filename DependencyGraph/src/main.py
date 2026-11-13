@@ -1,16 +1,19 @@
+"""Read Maven dependencies and display their graph or loading order."""
+
 import argparse
 import csv
 import json
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import urlopen
-import xml.etree.ElementTree as ET
+from xml.etree import ElementTree
 
 
 FIELDS = ("package", "version", "repository", "test_mode")
 
 
 def read_config(path):
+    """Read the two-column CSV configuration."""
     config = {}
 
     with path.open(encoding="utf-8-sig", newline="") as file:
@@ -37,6 +40,7 @@ def read_config(path):
 
 
 def validate_config(config, config_path):
+    """Check required settings and the repository location."""
     for key in FIELDS:
         if key not in config or not config[key]:
             raise ValueError(f"Setting is missing or empty: {key}")
@@ -61,6 +65,7 @@ def validate_config(config, config_path):
 
 
 def resolve_value(value, properties):
+    """Substitute properties declared in the current POM."""
     for key in properties:
         value = value.replace("${" + key + "}", properties[key])
 
@@ -71,6 +76,7 @@ def resolve_value(value, properties):
 
 
 def get_dependencies(package, version, repository):
+    """Download a POM and read its direct dependencies."""
     group_id, artifact_id = package.split(":")
     group_path = group_id.replace(".", "/")
     file_name = f"{artifact_id}-{version}.pom"
@@ -78,14 +84,16 @@ def get_dependencies(package, version, repository):
     url = repository.rstrip("/") + "/" + path
 
     with urlopen(url, timeout=10) as response:
-        root = ET.fromstring(response.read())
+        root = ElementTree.fromstring(response.read())
 
     if root.tag.split("}")[-1] != "project":
         raise ValueError("The repository did not return a Maven POM")
 
     properties = {
-        "project.version": version, "pom.version": version,
-        "project.groupId": group_id, "project.artifactId": artifact_id,
+        "project.version": version,
+        "pom.version": version,
+        "project.groupId": group_id,
+        "project.artifactId": artifact_id,
     }
 
     for item in root.findall("./{*}properties/*"):
@@ -109,6 +117,7 @@ def get_dependencies(package, version, repository):
 
 
 def read_test_repository(path):
+    """Read and validate the local dependency graph."""
     with path.open(encoding="utf-8-sig") as file:
         repository = json.load(file)
 
@@ -133,6 +142,7 @@ def read_test_repository(path):
 
 
 def bfs(level, graph, visited, config, repository):
+    """Process one graph level and recursively visit the next."""
     next_level = []
 
     for package in level:
@@ -158,6 +168,7 @@ def bfs(level, graph, visited, config, repository):
 
 
 def build_graph(config, config_path):
+    """Build the reachable graph from the selected repository."""
     if config["test_mode"] == "true":
         path = Path(config["repository"])
 
@@ -180,6 +191,7 @@ def build_graph(config, config_path):
 
 
 def print_graph(graph):
+    """Print each package and its direct dependencies."""
     print("Dependency graph:")
 
     for package, dependencies in graph.items():
@@ -192,6 +204,7 @@ def print_graph(graph):
 
 
 def loading_order(graph):
+    """Place dependencies first, or reject a cyclic graph."""
     order = []
     remaining = list(graph)
 
@@ -214,6 +227,7 @@ def loading_order(graph):
 
 
 def to_plantuml(graph):
+    """Convert graph nodes and edges into PlantUML text."""
     lines = ["@startuml"]
     names = {}
 
@@ -232,6 +246,7 @@ def to_plantuml(graph):
 
 
 def print_result(graph, args):
+    """Print the graph in the selected output format."""
     if args.plantuml:
         print(to_plantuml(graph))
 
@@ -245,6 +260,7 @@ def print_result(graph, args):
 
 
 def main():
+    """Read settings, build the graph, and handle errors."""
     parser = argparse.ArgumentParser(description="Maven dependency graph")
     default_path = Path(__file__).resolve().parents[1] / "config.csv"
     parser.add_argument("--config", type=Path, default=default_path)
@@ -265,7 +281,7 @@ def main():
         graph = build_graph(config, args.config)
         print_result(graph, args)
 
-    except (OSError, ET.ParseError, ValueError) as error:
+    except (OSError, ElementTree.ParseError, ValueError) as error:
         print(f"Dependency loading error: {error}")
         return 1
 

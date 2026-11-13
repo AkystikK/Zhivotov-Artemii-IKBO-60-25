@@ -1,32 +1,47 @@
+"""Test recursive breadth-first dependency graph construction."""
+
+import importlib.util
 import io
 import json
-from pathlib import Path
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT / "src"))
-
-from main import bfs, build_graph, read_config, read_test_repository
+SPEC = importlib.util.spec_from_file_location(
+    "dependency_graph", PROJECT / "src/main.py"
+)
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+bfs = MODULE.bfs
+build_graph = MODULE.build_graph
+read_config = MODULE.read_config
+read_test_repository = MODULE.read_test_repository
 
 
 class GraphTests(unittest.TestCase):
+    """Test graph traversal, dependency versions, and cycles."""
+
     def load_case(self, name):
+        """Build the graph for a named local test configuration."""
         path = PROJECT / f"tests/config_{name}.csv"
         return build_graph(read_config(path), path)
 
     def test_single_package(self):
+        """Handle a package with no dependencies."""
         self.assertEqual(self.load_case("single"), {"A": []})
 
     def test_transitive_chain(self):
+        """Collect every dependency in a chain."""
         graph = self.load_case("chain")
 
         self.assertEqual(graph, {"A": ["B"], "B": ["C"], "C": []})
 
     def test_shared_dependency(self):
+        """Handle a dependency shared by several packages."""
         graph = self.load_case("shared")
 
         self.assertEqual(graph["B"], ["D"])
@@ -34,17 +49,20 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(list(graph), ["A", "B", "C", "D"])
 
     def test_cycle_is_preserved_and_finishes(self):
+        """Keep cyclic edges without repeating the traversal."""
         graph = self.load_case("cycle")
 
         self.assertEqual(graph, {"A": ["B"], "B": ["C"], "C": ["A"]})
 
     def test_self_cycle(self):
+        """Handle a package that depends on itself."""
         graph = {}
         bfs(["A"], graph, {"A"}, {"test_mode": "true"}, {"A": ["A"]})
 
         self.assertEqual(graph, {"A": ["A"]})
 
     def test_breadth_first_order_and_unreachable_package(self):
+        """Visit breadth-first and omit unreachable packages."""
         repository = {
             "A": ["B", "C"], "B": ["D"], "C": ["E"],
             "D": [], "E": [], "Z": [],
@@ -57,6 +75,7 @@ class GraphTests(unittest.TestCase):
         self.assertNotIn("Z", graph)
 
     def test_real_graph_uses_each_dependency_version(self):
+        """Request the declared version of each dependency."""
         config = {
             "package": "example:root", "version": "1",
             "repository": "https://r", "test_mode": "false",
@@ -64,7 +83,9 @@ class GraphTests(unittest.TestCase):
         responses = [["example:a:2", "example:b:3"],
                      ["example:b:3"], []]
 
-        with patch("main.get_dependencies", side_effect=responses) as get:
+        with patch.object(
+            MODULE, "get_dependencies", side_effect=responses
+        ) as get:
             graph = build_graph(config, PROJECT / "config.csv")
 
         self.assertEqual(list(graph),
@@ -76,10 +97,12 @@ class GraphTests(unittest.TestCase):
                          ("example:b", "3", "https://r"))
 
     def test_missing_start_package(self):
+        """Reject a starting package absent from the repository."""
         with self.assertRaisesRegex(ValueError, "not found"):
             bfs(["Z"], {}, {"Z"}, {"test_mode": "true"}, {"A": []})
 
     def test_invalid_test_repositories(self):
+        """Reject malformed local repository data."""
         cases = [[], {"a": []}, {"A1": []}, {"A": "B"},
                  {"A": ["B"]}, {"A": [1]}]
 
@@ -92,6 +115,7 @@ class GraphTests(unittest.TestCase):
                         read_test_repository(Path("repository.json"))
 
     def test_cycle_from_command_line(self):
+        """Print a cyclic graph and finish successfully."""
         result = subprocess.run(
             [sys.executable, "-B", str(PROJECT / "src/main.py"),
              "--config", str(PROJECT / "tests/config_cycle.csv")],

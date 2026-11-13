@@ -1,17 +1,24 @@
+"""Test direct dependency parsing and repository errors."""
+
 import contextlib
+import importlib.util
 import io
-from pathlib import Path
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
-import xml.etree.ElementTree as ET
+from xml.etree import ElementTree
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT / "src"))
-
-from main import get_dependencies, main
+SPEC = importlib.util.spec_from_file_location(
+    "dependency_graph", PROJECT / "src/main.py"
+)
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+get_dependencies = MODULE.get_dependencies
+main = MODULE.main
 
 
 POM = b"""<project xmlns="http://maven.apache.org/POM/4.0.0">
@@ -43,8 +50,13 @@ POM = b"""<project xmlns="http://maven.apache.org/POM/4.0.0">
 
 
 class DependencyTests(unittest.TestCase):
+    """Test direct dependencies read from Maven POM files."""
+
     def test_direct_dependencies_and_requested_version(self):
-        with patch("main.urlopen", return_value=io.BytesIO(POM)) as request:
+        """Read direct dependencies and request the chosen version."""
+        with patch.object(
+            MODULE, "urlopen", return_value=io.BytesIO(POM)
+        ) as request:
             result = get_dependencies("org.example:demo", "2.5", "https://r/")
 
         self.assertEqual(result, ["example:first:1.0", "example:second:2.5"])
@@ -53,34 +65,47 @@ class DependencyTests(unittest.TestCase):
         )
 
     def test_no_namespace(self):
+        """Read a POM without an XML namespace."""
         pom = POM.replace(b' xmlns="http://maven.apache.org/POM/4.0.0"', b"")
 
-        with patch("main.urlopen", return_value=io.BytesIO(pom)):
+        with patch.object(MODULE, "urlopen", return_value=io.BytesIO(pom)):
             result = get_dependencies("example:demo", "1", "https://r")
 
         self.assertEqual(result, ["example:first:1.0", "example:second:1"])
 
     def test_no_dependencies(self):
-        with patch("main.urlopen", return_value=io.BytesIO(b"<project/>")):
+        """Accept a POM without dependencies."""
+        with patch.object(
+            MODULE, "urlopen", return_value=io.BytesIO(b"<project/>")
+        ):
             result = get_dependencies("example:demo", "1", "https://r")
 
         self.assertEqual(result, [])
 
     def test_invalid_xml(self):
-        with patch("main.urlopen", return_value=io.BytesIO(b"<broken")):
-            with self.assertRaises(ET.ParseError):
+        """Reject malformed XML."""
+        with patch.object(
+            MODULE, "urlopen", return_value=io.BytesIO(b"<broken")
+        ):
+            with self.assertRaises(ElementTree.ParseError):
                 get_dependencies("example:demo", "1", "https://r")
 
     def test_wrong_document(self):
-        with patch("main.urlopen", return_value=io.BytesIO(b"<html/>")):
+        """Reject an XML document that is not a Maven POM."""
+        with patch.object(
+            MODULE, "urlopen", return_value=io.BytesIO(b"<html/>")
+        ):
             with self.assertRaisesRegex(ValueError, "Maven POM"):
                 get_dependencies("example:demo", "1", "https://r")
 
     def test_network_error_message(self):
+        """Report a repository connection failure."""
         output = io.StringIO()
 
         with patch.object(sys, "argv", ["main.py"]):
-            with patch("main.urlopen", side_effect=URLError("unavailable")):
+            with patch.object(
+                MODULE, "urlopen", side_effect=URLError("unavailable")
+            ):
                 with contextlib.redirect_stdout(output):
                     result = main()
 
@@ -88,10 +113,11 @@ class DependencyTests(unittest.TestCase):
         self.assertIn("Dependency loading error:", output.getvalue())
 
     def test_output(self):
+        """Print the graph obtained from the dependency reader."""
         output = io.StringIO()
 
         with patch.object(sys, "argv", ["main.py"]):
-            with patch("main.get_dependencies", side_effect=[
+            with patch.object(MODULE, "get_dependencies", side_effect=[
                     ["example:first:1", "example:second:1"], [], []]):
                 with contextlib.redirect_stdout(output):
                     result = main()

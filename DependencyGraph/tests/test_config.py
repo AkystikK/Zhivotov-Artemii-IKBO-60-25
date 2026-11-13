@@ -1,17 +1,27 @@
-from pathlib import Path
+"""Test CSV settings and configuration errors."""
+
+import importlib.util
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT / "src"))
-
-from main import read_config, validate_config
+SPEC = importlib.util.spec_from_file_location(
+    "dependency_graph", PROJECT / "src/main.py"
+)
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+read_config = MODULE.read_config
+validate_config = MODULE.validate_config
 
 
 class ConfigTests(unittest.TestCase):
+    """Test reading and validating program settings."""
+
     def launch(self, config=None):
+        """Run the program with an optional CSV configuration."""
         command = [sys.executable, "-B", str(PROJECT / "src/main.py")]
 
         if config is not None:
@@ -23,6 +33,7 @@ class ConfigTests(unittest.TestCase):
         )
 
     def test_real_configuration(self):
+        """Read and validate the supplied Maven configuration."""
         path = PROJECT / "config.csv"
         config = read_config(path)
 
@@ -33,6 +44,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["test_mode"], "false")
 
     def test_local_configuration(self):
+        """Load the graph from a local test repository."""
         result = self.launch(PROJECT / "tests/config_test.csv")
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -40,6 +52,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("A -> B, C", result.stdout)
 
     def test_errors_for_each_parameter(self):
+        """Report invalid values for each configuration field."""
         for name in ["package", "version", "repository", "mode"]:
             with self.subTest(name=name):
                 config = PROJECT / f"tests/config_bad_{name}.csv"
@@ -50,6 +63,7 @@ class ConfigTests(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_missing_settings(self):
+        """Reject each missing required setting."""
         for key in ["package", "version", "repository", "test_mode"]:
             with self.subTest(key=key):
                 config = read_config(PROJECT / "config.csv")
@@ -59,6 +73,7 @@ class ConfigTests(unittest.TestCase):
                     validate_config(config, PROJECT / "config.csv")
 
     def test_no_extra_name_or_version_rules(self):
+        """Avoid imposing extra package or version restrictions."""
         config = read_config(PROJECT / "config.csv")
         config["package"] = "example"
         config["version"] = "release example"
@@ -66,6 +81,7 @@ class ConfigTests(unittest.TestCase):
         validate_config(config, PROJECT / "config.csv")
 
     def test_missing_repository_file(self):
+        """Reject a missing local repository file."""
         path = PROJECT / "tests/config_test.csv"
         config = read_config(path)
         config["repository"] = "missing.json"
@@ -74,6 +90,7 @@ class ConfigTests(unittest.TestCase):
             validate_config(config, path)
 
     def test_missing_config_file(self):
+        """Report a missing CSV configuration file."""
         result = self.launch(PROJECT / "missing.csv")
 
         self.assertEqual(result.returncode, 1)
